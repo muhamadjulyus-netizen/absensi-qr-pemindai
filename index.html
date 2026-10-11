@@ -1,0 +1,234 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14532d">
+
+  <title>Pemindai QR Absensi Siswa</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+    }
+
+    main {
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 22px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 18px #00000012;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 24px;
+      text-align: center;
+    }
+
+    p {
+      line-height: 1.6;
+    }
+
+    #reader {
+      width: 100%;
+      margin: 20px auto;
+    }
+
+    #status {
+      padding: 14px;
+      border-radius: 8px;
+      background: #e2e8f0;
+      overflow-wrap: anywhere;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 10px;
+      border: 0;
+      border-radius: 8px;
+      background: #166534;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    button:disabled {
+      background: #94a3b8;
+    }
+
+    .petunjuk {
+      font-size: 14px;
+      color: #475569;
+    }
+  </style>
+</head>
+
+<body>
+<main>
+  <h1>Pemindai QR Absensi</h1>
+
+  <p class="petunjuk">
+    Arahkan kamera belakang HP ke QR siswa.
+    Pastikan koneksi internet aktif.
+  </p>
+
+  <div id="reader"></div>
+
+  <div id="status" role="status" aria-live="polite">
+    Menyiapkan kamera...
+  </div>
+
+  <button id="mulai" type="button" hidden>
+    Mulai Pemindaian
+  </button>
+
+  <form id="formAbsensi" method="POST"
+        target="_self">
+    <input type="hidden" name="token" id="token">
+  </form>
+</main>
+
+<script>
+  // GANTI dengan URL Web App Apps Script yang aktif,
+  // lengkap sampai /exec. Jangan gunakan URL /dev.
+  const URL_APPS_SCRIPT =
+    'https://script.google.com/macros/s/AKfycbybCFu-SK3Mpfv0zYiH729aK6iERXnAtNn0__ZmULQ_BxzTIpxJYWeVYuIvvzPt-TJv/exec';
+
+  const statusEl = document.getElementById('status');
+  const tombolMulai = document.getElementById('mulai');
+  const form = document.getElementById('formAbsensi');
+
+  let pemindai = null;
+  let sedangMemproses = false;
+
+  function tampilkanStatus(pesan) {
+    statusEl.textContent = pesan;
+  }
+
+  function ambilToken(teksQR) {
+    const teks = String(teksQR || '').trim();
+
+    // QR yang sudah ada biasanya berisi URL dengan ?k=TOKEN.
+    try {
+      const url = new URL(teks);
+      const token = url.searchParams.get('k');
+
+      if (token) return token.trim();
+    } catch (error) {
+      // QR mungkin berisi token secara langsung.
+    }
+
+    // Mendukung QR yang berisi token mentah.
+    // Token kosong atau berupa URL biasa ditolak.
+    if (teks && !/^https?:\/\//i.test(teks)) {
+      return teks;
+    }
+
+    return '';
+  }
+
+  async function hentikanKamera() {
+    if (pemindai) {
+      try {
+        await pemindai.stop();
+      } catch (error) {
+        // Kamera mungkin sudah berhenti.
+      }
+    }
+  }
+
+  async function mulaiPemindaian() {
+    tombolMulai.hidden = true;
+    sedangMemproses = false;
+
+    try {
+      if (!window.isSecureContext) {
+        throw new Error(
+          'Halaman harus dibuka melalui HTTPS.'
+        );
+      }
+
+      if (!window.Html5Qrcode) {
+        throw new Error(
+          'Pustaka pemindai gagal dimuat. Periksa internet.'
+        );
+      }
+
+      if (!pemindai) {
+        pemindai = new Html5Qrcode('reader');
+      }
+
+      tampilkanStatus('Meminta akses kamera...');
+
+      await pemindai.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1
+        },
+        async function(teksQR) {
+          if (sedangMemproses) return;
+
+          const token = ambilToken(teksQR);
+
+          if (!token) {
+            tampilkanStatus(
+              'QR tidak berisi token absensi yang valid.'
+            );
+            return;
+          }
+
+          sedangMemproses = true;
+          tampilkanStatus(
+            'QR terbaca. Mengirim absensi ke server...'
+          );
+
+          await hentikanKamera();
+
+          document.getElementById('token').value = token;
+          form.action = URL_APPS_SCRIPT;
+          form.submit();
+        },
+        function() {
+          // Abaikan pesan saat kamera belum menemukan QR.
+        }
+      );
+
+      tampilkanStatus('Kamera aktif. Silakan pindai QR siswa.');
+    } catch (error) {
+      tampilkanStatus(
+        'Kamera gagal dibuka: ' +
+        (error.message || String(error))
+      );
+
+      tombolMulai.hidden = false;
+    }
+  }
+
+  tombolMulai.addEventListener('click', mulaiPemindaian);
+
+  if (URL_APPS_SCRIPT.includes('GANTI_DENGAN_URL')) {
+    tampilkanStatus(
+      'Konfigurasi belum selesai. Masukkan URL Web App Apps Script.'
+    );
+    tombolMulai.hidden = false;
+  } else {
+    mulaiPemindaian();
+  }
+</script>
+</body>
+</html>
