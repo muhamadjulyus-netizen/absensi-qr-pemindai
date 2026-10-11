@@ -156,6 +156,50 @@
       }
     }
   }
+function kirimAbsensiJSONP(token) {
+  return new Promise(function(resolve, reject) {
+    const callback = 'absensiCallback_' +
+      Date.now() + '_' +
+      Math.floor(Math.random() * 100000);
+
+    const script = document.createElement('script');
+    const batasWaktu = setTimeout(function() {
+      bersihkan();
+      reject(new Error(
+        'Server tidak merespons. Periksa koneksi internet.'
+      ));
+    }, 20000);
+
+    function bersihkan() {
+      clearTimeout(batasWaktu);
+      delete window[callback];
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    }
+
+    window[callback] = function(data) {
+      bersihkan();
+      resolve(data);
+    };
+
+    const url = new URL(URL_APPS_SCRIPT);
+    url.searchParams.set('aksi', 'absensi_jsonp');
+    url.searchParams.set('token', token);
+    url.searchParams.set('callback', callback);
+    url.searchParams.set('_', String(Date.now()));
+
+    script.src = url.toString();
+    script.onerror = function() {
+      bersihkan();
+      reject(new Error(
+        'Gagal menghubungi server absensi.'
+      ));
+    };
+
+    document.head.appendChild(script);
+  });
+}
 
   async function mulaiPemindaian() {
     tombolMulai.hidden = true;
@@ -200,15 +244,46 @@
           }
 
           sedangMemproses = true;
-          tampilkanStatus(
-            'QR terbaca. Mengirim absensi ke server...'
-          );
+          
+tampilkanStatus('QR terbaca. Mengirim absensi ke server...');
+await hentikanKamera();
 
-          await hentikanKamera();
+try {
+  const hasil = await kirimAbsensiJSONP(token);
 
-          document.getElementById('token').value = token;
-          form.action = URL_APPS_SCRIPT;
-          form.submit();
+  if (hasil.sukses) {
+    tampilkanStatus('BERHASIL: ' + hasil.pesan);
+  } else {
+    tampilkanStatus('GAGAL: ' + hasil.pesan);
+  }
+} catch (error) {
+  tampilkanStatus('GAGAL: ' + error.message);
+}
+
+setTimeout(async function() {
+  sedangMemproses = false;
+  await mulaiPemindaian();
+}, 2500);
+```
+
+**Jangan menghapus** bagian lain dari fungsi pemindai. Listener `window.addEventListener('message', ...)` dan form iframe tidak lagi diperlukan untuk alur baru, tetapi untuk tahap ini biarkan dahulu agar kita meminimalkan perubahan.
+
+## 2.4. Simpan dan uji
+
+1. Klik **Commit changes** di GitHub.
+2. Buka kembali halaman pemindai GitHub Pages.
+3. Muat ulang halaman.
+4. Pindai satu QR siswa untuk pengujian.
+
+Hasil yang diharapkan:
+
+- Status menampilkan hasil absensi: `BERHASIL` atau `GAGAL`.
+- Sekitar 2,5 detik kemudian kamera mencoba aktif kembali.
+- Jika siswa yang sama sudah tercatat pada tanggal tersebut, sistem dapat menampilkan pesan duplikasi sesuai validasi yang sudah ada.
+
+**Catatan:** pengujian ini memanggil fungsi pencatatan yang sama seperti sebelumnya. Karena itu, gunakan satu QR uji dan perhatikan pesan duplikasi bila absensinya sudah tercatat.
+
+Setelah diuji, beri tahu saya **status yang muncul di halaman pemindai** dan apakah kamera terbuka kembali.
         },
         function() {
           // Abaikan pesan saat kamera belum menemukan QR.
