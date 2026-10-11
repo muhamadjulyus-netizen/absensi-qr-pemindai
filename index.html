@@ -95,10 +95,17 @@
     Mulai Pemindaian
   </button>
 
-  <form id="formAbsensi" method="POST"
-        target="_self">
+  
+  <form id="formAbsensi" method="POST" target="hasilFrame">
     <input type="hidden" name="token" id="token">
   </form>
+
+  <iframe
+    name="hasilFrame"
+    id="hasilFrame"
+    title="Hasil pemrosesan absensi"
+    hidden>
+  </iframe>
 </main>
 
 <script>
@@ -220,6 +227,29 @@
   }
 
   tombolMulai.addEventListener('click', mulaiPemindaian);
+  
+window.addEventListener('message', function(event) {
+  const data = event.data;
+
+  if (!data || data.type !== 'absensi-qr-result') {
+    return;
+  }
+
+  sedangMemproses = true;
+
+  if (data.sukses) {
+    tampilkanStatus('BERHASIL: ' + data.pesan);
+  } else {
+    tampilkanStatus('GAGAL: ' + data.pesan);
+  }
+
+  // Tunggu agar operator dapat membaca hasil.
+  setTimeout(async function() {
+    sedangMemproses = false;
+    await mulaiPemindaian();
+  }, 2500);
+});
+
 
   if (URL_APPS_SCRIPT.includes('GANTI_DENGAN_URL')) {
     tampilkanStatus(
